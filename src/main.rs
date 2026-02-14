@@ -1,18 +1,16 @@
-use axum::{
-    Form, Json, Router, body, extract::Query, http::{Response, response}, response::Html, routing::{get,post}
-};
+use axum::{Json, Router, extract::{State}, response::Html, routing::{get,post}};
+use reqwest;
 use tokio::fs;
-use std::{fmt::format, net::SocketAddr, str, sync::Arc, vec};
+use std::{net::SocketAddr, path::PathBuf, str, sync::Arc, vec};
 use serde::{Deserialize, Serialize};
+use axum_server::tls_rustls::RustlsConfig;
 
-
-#[derive(Deserialize, Serialize, Debug)]
-struct UserInput{
-    input: String,
-}
 
 const HTML_PATH: &str  = "static/index.html";
 const API_KEY_PATH: &str = "static/openai_api_key.txt";
+const SERVER_MODE: &str = "HTTPS";
+const SSL_PRI_PATH: &str = "static/ssl/priv.pem";
+const SSL_PUB_PATH: &str = "static/ssl/cer.pem";
 
 #[derive(Deserialize)]
 struct UserQuery{
@@ -27,7 +25,7 @@ struct ServerResponse{
 }
 
 #[derive(Serialize)]
-struct OpenAIRequest_T{ //with temperature configuration
+struct OpenAIRequest{ //with temperature configuration
     model: String,
     messages: Vec<OpenAIMessage>,   // For upload format, it's messages (with 's')
     temperature: Option<f32>,
@@ -49,38 +47,53 @@ struct Choice {
     message: OpenAIMessage // For the receive format, it's message (no 's')
 }
 
+struct Appstates{
+    client: reqwest::Client,
+    openai_key: String,
+}
+
 #[tokio::main] // This macro sets up the multi-threaded Async engine
 async fn main() {
+    let api_key = fs::read_to_string(API_KEY_PATH).await.unwrap();
+    let request_state = Arc::new(Appstates{
+        client: reqwest::Client::new(),
+        openai_key: api_key
+    });
+
     let app = Router::new()
         .route("/", get(serve_index))
-        .route("/submit", post(handle_submit));
+        .route("/submit", post(handle_submit)).with_state(request_state);
 
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 5000));
     println!("🚀 Server running at http://{}", addr);
 
-    
-    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    if SERVER_MODE == "HTTP"{
+        let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+        axum::serve(listener, app).await.unwrap();
+    }else {
+        let config = RustlsConfig::from_pem_file(
+            PathBuf::from(SSL_PUB_PATH),
+            PathBuf::from(SSL_PRI_PATH)).await.unwrap();
+        axum_server::bind_rustls(addr, config)
+            .serve(app.into_make_service())
+            .await.unwrap();
+    }
 }
 
 
-async fn serve_index() -> Html<String> {
-    // NOTE: This String is stored on the HEAP (because it's dynamic data).
+async fn serve_index(State(_rs_state): State<Arc<Appstates>>) -> Html<String> {
     match fs::read_to_string(HTML_PATH).await {
         Ok(content) => Html(content),
         Err(e) => Html(format!("<h1>500 Internal Server Error: {}</h1>", e).to_string()),
     }
 }
 
-async fn handle_submit(Json(params): Json<UserQuery>) -> Json<ServerResponse>{
-    // API read
-    let api_key = fs::read_to_string(API_KEY_PATH).await.unwrap();
-    //let content = fs::read_to_string(HTML_PATH).await.unwrap();
-    let client = reqwest::Client::new();
+async fn handle_submit(State(rs_state):State<Arc<Appstates>>, 
+    Json(params): Json<UserQuery>) -> Json<ServerResponse>{
     let openai_req;
     if params.model_type == "gpt-4o-mini"{
-        openai_req = OpenAIRequest_T{
+        openai_req = OpenAIRequest{
             model: params.model_type,
             messages: vec![OpenAIMessage{
                 role: "user".to_string(),
@@ -89,7 +102,7 @@ async fn handle_submit(Json(params): Json<UserQuery>) -> Json<ServerResponse>{
             temperature: Some(0.0),
         };
     } else {
-        openai_req = OpenAIRequest_T{
+        openai_req = OpenAIRequest{
             model: params.model_type,
             messages: vec![OpenAIMessage{
                 role: "user".to_string(),
@@ -99,9 +112,9 @@ async fn handle_submit(Json(params): Json<UserQuery>) -> Json<ServerResponse>{
     }
     }
      
-    let rs = client
+    let rs = rs_state.client
             .post("https://api.openai.com/v1/chat/completions")
-            .bearer_auth(api_key)
+            .bearer_auth(&rs_state.openai_key)
             .json(&openai_req)
             .send().await;
     
@@ -111,8 +124,8 @@ async fn handle_submit(Json(params): Json<UserQuery>) -> Json<ServerResponse>{
     //Json(ServerResponse{success: false, answer: "Test Mode".to_string()})
 
     let response: ServerResponse = match rs {
-        Ok(response) => {
-            let openai_data: OpenAIResponse = response.json().await.unwrap();
+        Ok(raw_response) => {
+            let openai_data: OpenAIResponse = raw_response.json().await.unwrap();
             let ai_answer = openai_data.choices[0].message.content.clone(); // Why clone?
             ServerResponse{answer: ai_answer, success: true}
         },
