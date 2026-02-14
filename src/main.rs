@@ -4,13 +4,14 @@ use tokio::fs;
 use std::{net::SocketAddr, path::PathBuf, str, sync::Arc, vec};
 use serde::{Deserialize, Serialize};
 use axum_server::tls_rustls::RustlsConfig;
+use tower_http::services::ServeDir;
 
 
-const HTML_PATH: &str  = "static/index.html";
-const API_KEY_PATH: &str = "static/openai_api_key.txt";
+const HTML_PATH: &str  = "assets/index.html";
+const API_KEY_PATH: &str = "assets/openai_api_key.txt";
 const SERVER_MODE: &str = "HTTPS";
-const SSL_PRI_PATH: &str = "static/ssl/priv.pem";
-const SSL_PUB_PATH: &str = "static/ssl/cer.pem";
+const SSL_PRI_PATH: &str = "assets/ssl/priv.pem";
+const SSL_PUB_PATH: &str = "assets/ssl/cer.pem";
 
 #[derive(Deserialize)]
 struct UserQuery{
@@ -59,10 +60,13 @@ async fn main() {
         client: reqwest::Client::new(),
         openai_key: api_key
     });
+    let static_files_services = ServeDir::new("assets");
 
     let app = Router::new()
         .route("/", get(serve_index))
-        .route("/submit", post(handle_submit)).with_state(request_state);
+        .route("/submit", post(handle_submit))
+        .with_state(request_state)
+        .nest_service("/assets", static_files_services);
 
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 5000));
