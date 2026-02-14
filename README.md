@@ -9,5 +9,3 @@ All reside in the beginning of `src/main.rs` file.
 Request: HTML form component -> JS transform into JSON request -> Server -> Response
 Response: Response JSON{"answer":..., "sucess":...} -> JS handler -> fill html <pre> text content
 ```
-
-# Details
