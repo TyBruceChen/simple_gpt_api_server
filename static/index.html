@@ -1,14 +1,108 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
-<head><title>Rust Server</title></head>
+<head>
+<title>Grading Simulation GPT-4o-mini AI</title>
+<script type="text/javascript" id="MathJax-script" async
+            src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js">
+</script>
+</head>
 <body>
-    <h1>Hello from the Rust Stack!</h1>
-    <p>This page was served by a high-performance Rust backend.</p>
-    <form action="/submit" method="post">
-        <label for="input">Enter some text:</label>
-        <input type="text" id="input" name="input">
-        <button type="submit">Submit</button>
-    </form>
-    <div id="response" style="display: none;">LLM_RESPONSE</div>
-</body>
-</html>
+<h1>Grading LLM Generation Simulation</h1>
+<h2>Ask one question</h2>
+<h4 style="color:red">Note: This is only personally used to verify the prompt of the homework SINCE THE SUBMISSION TRIALS ARE LIMITED QAQ! Do not serve it as a generic AI chatbot, since tokens paid!</h4>
+<form id=askForm>
+  <input type=text id=question name=question style=width:80% required>
+  <button type=submit>Ask</button><br>
+  <label>Model:</label>
+  <select id=model_type name=model_type style=width:30%>
+    <option value="gpt-4o-mini">gpt-4o-mini</option>
+    <option value="gpt-5-mini">gpt-5-mini</option>
+    </select>
+</form>
+<button id="copyButton" style="background-color:green;color:white;">TEXT Copy</button>
+<pre id="answer" style=white-space:pre-wrap;border:1px solid #ddd;padding:10px;margin-top:10px;height:300px;overflow:auto></pre>
+
+<script>
+(function(){
+    function sanitizePre(pre){
+        const original = pre.textContent;
+        const cleaned = original.replace(/```python\s*/g,'').replace(/```/g,'');
+        if(original !== cleaned) pre.textContent = cleaned;
+    }
+
+    document.querySelectorAll('pre').forEach(pre=>{
+        sanitizePre(pre);
+        new MutationObserver(()=>sanitizePre(pre))
+            .observe(pre, { childList: true, characterData: true, subtree: true });
+    });
+})();
+</script>
+
+<script>
+    const htmlToCopy = document.getElementById('answer');
+    const copyButton = document.getElementById('copyButton');
+
+    copyButton.addEventListener('click', async () => {
+        try {
+            const plainText = htmlToCopy.innerText;
+            const htmlContent = htmlToCopy.outerHTML;
+
+            const clipboardItem = new ClipboardItem({
+                "text/plain": new Blob([plainText], { type: "text/plain" }),
+                "text/html": new Blob([htmlContent], { type: "text/html" })
+            });
+
+            await navigator.clipboard.write([clipboardItem]);
+            console.log('HTML content copied to clipboard!');
+        } catch (err) {
+            console.error('Failed to copy HTML: ', err);
+        }
+    });
+</script>
+<script>
+document.getElementById('askForm').addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const q = document.getElementById('question').value;
+  const model_type = document.getElementById('model_type').value;
+  const postData = {question: q,
+                    model_type: model_type  // for future use
+  };
+  document.getElementById('answer').textContent = 'Thinking...';
+  try{
+    const resp = await fetch('/submit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(postData)});
+    const j = await resp.json();
+    console.log(j.answer);
+    if(j.success) document.getElementById('answer').textContent = j.answer; else document.getElementById('answer').textContent = 'Error: '+(j.error||JSON.stringify(j));
+  }catch(err){ document.getElementById('answer').textContent = 'Network error: '+err; }
+});
+</script>
+
+<div id="instuctions" style="color:gray">
+<br><br><br><hr><hr>
+<h3 style="color:gray">Disclaim: How to use OpenAI API (quick reminder)</h3>
+<p>
+Set environment variable OPENAI_API_KEY to your API key at <a href="https://platform.openai.com/api-keys?utm_source=chatgpt.com">OpenAI API</a> (remember to save the content!), and QUESTION to your question, then run:
+</p>
+<pre style="color:gray">
+<code>
+OPENAI_API_KEY='your_api_key_here'
+QUESTION='your_question_here'
+
+from openai import OpenAI
+client = OpenAI(api_key=OPENAI_API_KEY)  # reads OPENAI_API_KEY from env
+
+resp = client.responses.create(
+    model="gpt-4o-mini",
+    input="QUESTION"
+)
+
+print(resp.output_text)
+</code>
+</pre>
+<hr>
+<h3 style="color:gray">Quick startup to python (packages/environment ready) at <a href="https://colab.research.google.com/">Google Colab</a></h3>
+</div>
+
+<footer><a href="https://platform.openai.com/docs/api-reference/responses/object" style="position: fixed;bottom: 40px;right: 20px;">API Docs</a>
+<a href="https://ty-b-c.com" style="position: fixed;bottom: 20px;right: 20px;">Home Page</a><footer>
+</body></html>

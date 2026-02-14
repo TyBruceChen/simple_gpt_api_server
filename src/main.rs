@@ -16,18 +16,21 @@ const API_KEY_PATH: &str = "static/openai_api_key.txt";
 
 #[derive(Deserialize)]
 struct UserQuery{
+    model_type: String,
     question: String,
 }
 
 #[derive(Serialize)]
 struct ServerResponse{
+    success: bool,
     answer: String,
 }
 
 #[derive(Serialize)]
-struct OpenAIRequest{
+struct OpenAIRequest_T{ //with temperature configuration
     model: String,
     messages: Vec<OpenAIMessage>,   // For upload format, it's messages (with 's')
+    temperature: Option<f32>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -48,10 +51,6 @@ struct Choice {
 
 #[tokio::main] // This macro sets up the multi-threaded Async engine
 async fn main() {
-    //let shared_api_key = Arc::new(api_key); 
-    let api_key = fs::read_to_string(API_KEY_PATH).await.unwrap();
-    print!("API: {}", api_key);
-
     let app = Router::new()
         .route("/", get(serve_index))
         .route("/submit", post(handle_submit));
@@ -74,21 +73,32 @@ async fn serve_index() -> Html<String> {
     }
 }
 
-const PREFIX: &str = r#"<div id="response" style="display: none;">LLM_RESPONSE"#;
-const PREFIX_: &str = r#"<div id="response" style="display: block;">"#;
-
-async fn handle_submit(Form(params): Form<UserInput>) -> Html<String>{
+async fn handle_submit(Json(params): Json<UserQuery>) -> Json<ServerResponse>{
     // API read
     let api_key = fs::read_to_string(API_KEY_PATH).await.unwrap();
-    let content = fs::read_to_string(HTML_PATH).await.unwrap();
+    //let content = fs::read_to_string(HTML_PATH).await.unwrap();
     let client = reqwest::Client::new();
-    let openai_req = OpenAIRequest{
-        model: "gpt-4o-mini".to_string(),
-        messages: vec![OpenAIMessage{
-            role: "user".to_string(),
-            content: params.input,
-        }],
-    };
+    let openai_req;
+    if params.model_type == "gpt-4o-mini"{
+        openai_req = OpenAIRequest_T{
+            model: params.model_type,
+            messages: vec![OpenAIMessage{
+                role: "user".to_string(),
+                content: params.question, 
+            }],
+            temperature: Some(0.0),
+        };
+    } else {
+        openai_req = OpenAIRequest_T{
+            model: params.model_type,
+            messages: vec![OpenAIMessage{
+                role: "user".to_string(),
+                content: params.question, 
+            }],
+            temperature: None,
+    }
+    }
+     
     let rs = client
             .post("https://api.openai.com/v1/chat/completions")
             .bearer_auth(api_key)
@@ -98,17 +108,15 @@ async fn handle_submit(Form(params): Form<UserInput>) -> Html<String>{
     // Test script:
     //let body_text = rs.unwrap().text().await.unwrap();
     //println!("{}", body_text);
-    //Html("No".to_string())
+    //Json(ServerResponse{success: false, answer: "Test Mode".to_string()})
 
     let response: ServerResponse = match rs {
         Ok(response) => {
             let openai_data: OpenAIResponse = response.json().await.unwrap();
             let ai_answer = openai_data.choices[0].message.content.clone(); // Why clone?
-            ServerResponse{answer: ai_answer}
+            ServerResponse{answer: ai_answer, success: true}
         },
-        Err(_) => ServerResponse{answer: "Connection Error".to_string()}
+        Err(e) => ServerResponse{answer: format!("Connection Error {}", e), success: false}
     };
-    //let response: String = format!("Receive: {}", params.input);
-    let response = content.replace(PREFIX, format!("{}{}", PREFIX_, &response.answer).as_str());
-    Html(response)
+    Json(response)
 }
