@@ -8,10 +8,10 @@ use tower_http::services::ServeDir;
 
 
 const HTML_PATH: &str  = "assets/index.html";
-const API_KEY_PATH: &str = "assets/openai_api_key.txt";
+const API_KEY_PATH: &str = "credentials/openai_api_key.txt";
 const SERVER_MODE: &str = "HTTPS";
-const SSL_PRI_PATH: &str = "assets/ssl/priv.pem";
-const SSL_PUB_PATH: &str = "assets/ssl/cer.pem";
+const SSL_PRI_PATH: &str = "credentials/ssl/priv.pem";
+const SSL_PUB_PATH: &str = "credentials/ssl/cer.pem";
 
 #[derive(Deserialize)]
 struct UserQuery{
@@ -70,7 +70,7 @@ async fn main() {
 
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 5000));
-    println!("🚀 Server running at http://{}", addr);
+    println!("🚀 Server running at https://{}", addr);
 
     if SERVER_MODE == "HTTP"{
         let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
